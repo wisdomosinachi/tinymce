@@ -170,6 +170,11 @@ export type Target = Node | Window | Array<Node | Window>;
 export type RunArguments<T extends Node = Node> = string | T | Array<string | T>;
 export type BoundEvent = [ Target, string, EventUtilsCallback<any>, any ];
 
+export interface SplitOptions {
+  skipTrimBefore?: boolean;
+  skipTrimAfter?: boolean;
+}
+
 interface DOMUtils {
   doc: Document;
   settings: Partial<DOMUtilsSettings>;
@@ -256,6 +261,7 @@ interface DOMUtils {
   isEmpty (node: Node, elements?: Record<string, any>): boolean;
   createRng (): Range;
   nodeIndex (node: Node, normalized?: boolean): number;
+  split <T extends Node>(parentElm: Node, splitElm: Node, replacementElm: undefined, options: SplitOptions): T;
   split <T extends Node>(parentElm: Node, splitElm: Node, replacementElm: T): T;
   split <T extends Node>(parentElm: Node, splitElm: T): T;
   bind <K extends keyof HTMLElementEventMap, T extends Target>(target: T, name: K, func: EventUtilsCallback<HTMLElementEventMap[K]>, scope?: any): T extends [] ? EventUtilsCallback<HTMLElementEventMap[K]>[] : EventUtilsCallback<HTMLElementEventMap[K]>;
@@ -1055,38 +1061,52 @@ function DOMUtils(doc: Document, settings: Partial<DOMUtilsSettings> = {}): DOMU
 
   const createRng = () => doc.createRange();
 
-  const split = (parentElm: Node, splitElm: Node, replacementElm?: Node) => {
-    let r = createRng(), bef, aft, pa;
+  const split = (parentElm: Node, splitElement: Node, replacementElement?: Node, optionsInput?: SplitOptions) => {
+    const options: SplitOptions = optionsInput ? optionsInput : {};
+    let r = createRng();
+    let beforeFragment: DocumentFragment;
+    let afterFragment: DocumentFragment;
+    let parentNode: Node;
 
-    if (parentElm && splitElm) {
+    const doTrim = (fragment: DocumentFragment, isBefore: boolean): DocumentFragment => {
+      if (isBefore && !options.skipTrimBefore) {
+        return TrimNode.trimNode(self, fragment);
+      } else if (!isBefore && !options.skipTrimAfter) {
+        return TrimNode.trimNode(self, fragment);
+      } else {
+        return fragment;
+      }
+    };
+
+    if (parentElm && splitElement) {
       // Get before chunk
       r.setStart(parentElm.parentNode, findNodeIndex(parentElm));
-      r.setEnd(splitElm.parentNode, findNodeIndex(splitElm));
-      bef = r.extractContents();
+      r.setEnd(splitElement.parentNode, findNodeIndex(splitElement));
+      beforeFragment = r.extractContents();
 
       // Get after chunk
       r = createRng();
-      r.setStart(splitElm.parentNode, findNodeIndex(splitElm) + 1);
+      r.setStart(splitElement.parentNode, findNodeIndex(splitElement) + 1);
       r.setEnd(parentElm.parentNode, findNodeIndex(parentElm) + 1);
-      aft = r.extractContents();
+      afterFragment = r.extractContents();
 
       // Insert before chunk
-      pa = parentElm.parentNode;
-      pa.insertBefore(TrimNode.trimNode(self, bef), parentElm);
+      parentNode = parentElm.parentNode;
+      parentNode.insertBefore(doTrim(beforeFragment, true), parentElm);
 
       // Insert middle chunk
-      if (replacementElm) {
-        pa.insertBefore(replacementElm, parentElm);
+      if (replacementElement) {
+        parentNode.insertBefore(replacementElement, parentElm);
         // pa.replaceChild(replacementElm, splitElm);
       } else {
-        pa.insertBefore(splitElm, parentElm);
+        parentNode.insertBefore(splitElement, parentElm);
       }
 
       // Insert after chunk
-      pa.insertBefore(TrimNode.trimNode(self, aft), parentElm);
+      parentNode.insertBefore(doTrim(afterFragment, false), parentElm);
       remove(parentElm);
 
-      return replacementElm || splitElm;
+      return replacementElement || splitElement;
     }
   };
 
